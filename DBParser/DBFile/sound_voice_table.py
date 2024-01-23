@@ -29,17 +29,20 @@ def prep_workspace(file_jsons):
     req_files = ["sound_voice_table",
                  "sound_voicer",
                  "sound_category",
-                 "sound_se_all_id_to_id"]
+                 "sound_se_all_id_to_id",
+                 "sound_cuesheet"]
     if check_workspace(req_files, file_jsons): return
     sound_voice_blow = file_entry(file_jsons, "sound_voice_table", False)
     sound_voicer = file_entry(file_jsons, "sound_voicer", False)
     sound_category = file_entry(file_jsons, "sound_category", False)
-    sound_se_all_id_to_id = file_entry(file_jsons, "sound_se_all_id_to_id")
+    sound_se_all_id_to_id = file_entry(file_jsons, "sound_se_all_id_to_id", False)
+    sound_cuesheet = file_entry(file_jsons, "sound_cuesheet", False)
 
     new_dict = tree()
     voicer = get_entries(sound_voicer)
     sound_cats = get_entries(sound_category)
     se_id = get_sound_se_id(sound_se_all_id_to_id)
+    cues = get_entries(sound_cuesheet)
     for cat_num in [e for e in sound_voice_blow["subTable"] if e.isdigit()]:
         category = list(sound_voice_blow["subTable"][cat_num].keys())[0]
         for entry in [e for e in sound_voice_blow["subTable"][cat_num][category]["1"] if e.isdigit()]:
@@ -49,9 +52,12 @@ def prep_workspace(file_jsons):
                 voice_table = str(sound_voice_blow["subTable"][cat_num][category]["1"][entry][voicer_name]["1"][sound_entry][sound_id]["2"])
                 sound_eff_id = sound_voice_blow[voice_table][""]["se_id"]
                 if sound_eff_id in se_id:
-                    new_dict[category][voicer_name][sound_id] = se_id[sound_eff_id]
-                else:
-                    new_dict[category][voicer_name][sound_id] = sound_eff_id
+                    sound_eff_name = se_id[sound_eff_id]
+                    new_dict[category][voicer_name][sound_id]["Sound Name (Preview Only)"] = sound_eff_name
+                cur_cuesheet = sound_eff_id >> 16
+                cur_cue = sound_eff_id & 0xFFFF
+                new_dict[category][voicer_name][sound_id]["Cuesheet"] = cues[cur_cuesheet]
+                new_dict[category][voicer_name][sound_id]["Cue"] = cur_cue
     file_jsons["Final"]["sound_voice_table"] = new_dict
     return
 
@@ -60,12 +66,14 @@ def prep_build(file_jsons):
     req_files = ["sound_voice_table",
                  "sound_voicer",
                  "sound_category",
-                 "sound_se_all_id_to_id"]
+                 "sound_se_all_id_to_id",
+                 "sound_cuesheet"]
     if check_workspace(req_files, file_jsons): return
     sound_voice_table = file_entry(file_jsons, "sound_voice_table")
     sound_voicer = file_entry(file_jsons, "sound_voicer")
     sound_category = file_entry(file_jsons, "sound_category")
     sound_se_all_id_to_id = file_entry(file_jsons, "sound_se_all_id_to_id")
+    sound_cuesheet = file_entry(file_jsons, "sound_cuesheet")
 
     global base_json
     global sub_json
@@ -84,6 +92,7 @@ def prep_build(file_jsons):
     voicer = get_entries(sound_voicer, True)
     sound_cats = get_entries(sound_category, True)
     se_id = get_sound_se_id(sound_se_all_id_to_id, True)
+    cues = get_entries(sound_cuesheet, True)
     cur_main_id = 0
 
     sound_voice_table = sort_dict_by_puid(sound_voice_table, sound_cats)
@@ -108,20 +117,16 @@ def prep_build(file_jsons):
             for sound_idx, sound_id in enumerate(list(sound_voice_table[category][voice_name].keys())):
                 m_v_dict["ROW_COUNT"] = sound_idx + 1
                 sidx = str(sound_idx)
-                cur_se_id = sound_voice_table[category][voice_name][sound_id]
+                cur_cuesheet = cues[sound_voice_table[category][voice_name][sound_id]["Cuesheet"]]
+                cur_cue = sound_voice_table[category][voice_name][sound_id]["Cue"]
+                cur_se_id = (cur_cuesheet << 16) + cur_cue
                 main_idx = str(cur_main_id)
                 m_v_dict[sidx][sound_id]["0"] = int(sound_id)
                 m_v_dict[sidx][sound_id]["2"] = cur_main_id
                 new_dict[main_idx][""]["*"] = group_id
                 new_dict[main_idx][""]["**"] = cur_voicer_id
                 new_dict[main_idx][""]["***"] = int(sound_id)
-                if cur_se_id in se_id:
-                    new_dict[main_idx][""]["se_id"] = se_id[cur_se_id]
-                elif isinstance(cur_se_id, int):
-                    new_dict[main_idx][""]["se_id"] = cur_se_id
-                else:
-                    print(f"{cur_se_id} string not in sound_se_all_id_to_id. Value will be written as 0.")
-                    new_dict[main_idx][""]["se_id"] = 0
+                new_dict[main_idx][""]["se_id"] = cur_se_id
                 cur_main_id += 1
             m_c_dict[midx][voice_name]["1"] = deepcopy(m_v_dict)
             m_c_dict[midx][voice_name]["2"] = first_id

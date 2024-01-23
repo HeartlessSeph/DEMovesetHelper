@@ -44,6 +44,12 @@ def remove_duplicates(dict_list):
     return unique_dicts
 
 
+def indexer_calc(mval):
+    val_1 = mval * 256
+    val_2 = abs(val_1 // 65536)
+    return val_1 - (65536 * val_2)
+
+
 def prep_workspace(file_jsons):
     req_files = ["sound_finish_blow",
                  "sound_cuesheet",
@@ -64,6 +70,9 @@ def prep_workspace(file_jsons):
             motion_table = str(sound_finish_blow["subTable"][cat_num][category]["1"][entry][motion_name]["2"])
             new_dict[category][motion_name] = deepcopy(sound_finish_blow[motion_table][""])
             new_dict[category][motion_name]["cuesheet"] = cues[new_dict[category][motion_name]["cuesheet"]]
+            new_dict[category][motion_name].pop("*")
+            new_dict[category][motion_name].pop("**")
+            new_dict[category][motion_name].pop("***")
     file_jsons["Final"]["sound_finish_blow"] = new_dict
     return
 
@@ -109,7 +118,16 @@ def prep_build(file_jsons):
 
     for category in sound_finish_blow:
         for entry in sound_finish_blow[category]:
-            sound_finish_blow[category][entry]["cuesheet"] = cues[sound_finish_blow[category][entry]["cuesheet"]]
+            cur_cuesheet = cues[sound_finish_blow[category][entry]["cuesheet"]]
+            cur_cue = sound_finish_blow[category][entry]["cue"]
+            indexer_val = indexer_calc(cur_cuesheet)
+            sound_finish_blow[category][entry].pop("cue")
+            sound_finish_blow[category][entry].pop("cuesheet")
+            sound_finish_blow[category][entry]["*"] = indexer_val
+            sound_finish_blow[category][entry]["**"] = indexer_val
+            sound_finish_blow[category][entry]["cuesheet"] = cur_cuesheet
+            sound_finish_blow[category][entry]["cue"] = cur_cue
+            sound_finish_blow[category][entry]["***"] = indexer_val
             main_entry_list.append(sound_finish_blow[category][entry])
     main_entry_list = remove_duplicates(main_entry_list)
     for cat_idx, category in enumerate(list(sound_finish_blow.keys())):

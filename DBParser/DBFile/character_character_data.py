@@ -1,55 +1,124 @@
-from util import tree, get_entries, import_json, get_file_information
+from util import tree, get_entries, get_file_information, check_workspace, file_entry
 import json
 
 
-# TODO: Only the base and sub jsons were done. Fix this for release
-def sort_dict_by_file_info(mdict, file_info):
+def sort_dict_by_puid(mdict, mot):
     to_sort = {}
     keys_to_remove = []
-    for command_set in mdict:
-        to_sort[command_set] = {"SortKey": file_info[command_set], "Dict": mdict[command_set]}
+    for cur_anim in mdict:
+        to_sort[cur_anim] = {"SortKey": mot[cur_anim], "Dict": mdict[cur_anim]}
     to_sort = dict(sorted(to_sort.items(), key=lambda item: item[1]["SortKey"]))
     result_dict = {key: to_sort[key]["Dict"] for key in to_sort}
     return result_dict
 
 
-def prep_workspace(command_set, motion_set):
+def find_matching_index(dict_list, my_dict):
+    for idx, d in enumerate(dict_list):
+        if all(d[key] == value for key, value in my_dict.items()):
+            return idx
+    return None  # Return None if no match is found
+
+
+def remove_duplicates(dict_list):
+    seen_representations = set()
+    unique_dicts = []
+
+    for d in dict_list:
+        representation = tuple(sorted(d.items()))
+        if representation not in seen_representations:
+            seen_representations.add(representation)
+            unique_dicts.append(d)
+
+    return unique_dicts
+
+
+def prep_workspace(file_jsons):
+    req_files = ["character_character_data", "character", "sound_voicer", "character_model"]
+    if check_workspace(req_files, file_jsons): return
+    character_character = file_entry(file_jsons, "character_character_data", False)
+    character_ref = file_entry(file_jsons, "character", False)
+    sound_voicer = file_entry(file_jsons, "sound_voicer", False)
+    character_model = file_entry(file_jsons, "character_model", False)
+
     new_dict = tree()
-    mot_set = get_entries(motion_set)
-    for entry in [e for e in command_set["subTable"] if e.isdigit()]:
-        set_name = list(command_set["subTable"][entry].keys())[0]
-        set_table = str(command_set["subTable"][entry][set_name]["2"])
-        for set_entry in command_set[set_table][""]:
-            if set_entry == "motion_set":
-                new_dict[set_name][set_entry] = mot_set[command_set[set_table][""][set_entry]]
-            else:
-                new_dict[set_name][set_entry] = command_set[set_table][""][set_entry]
-    return new_dict
+    chara = get_entries(character_ref)
+    chara_model = get_entries(character_model)
+    voicer = get_entries(sound_voicer)
+    for entry in [e for e in character_character["subTable"] if e.isdigit()]:
+        set_name = list(character_character["subTable"][entry].keys())[0]
+        set_table = str(character_character["subTable"][entry][set_name]["2"])
+        new_dict[set_name] = character_character[set_table][""]
+        new_dict[set_name].pop("*character")
+        new_dict[set_name]["voicer"] = voicer[new_dict[set_name]["voicer"]]
+        new_dict[set_name]["adv_model_id"] = chara_model[new_dict[set_name]["adv_model_id"]]
+        new_dict[set_name]["auth_model_id"] = chara_model[new_dict[set_name]["auth_model_id"]]
+    file_jsons["Final"]["character_character_data"] = new_dict
+    return
 
 
-def prep_build(command_set, motion_set, file_information):
+def prep_build(file_jsons):
+    req_files = ["character_character_data", "character", "sound_voicer", "character_model"]
+    if check_workspace(req_files, file_jsons): return
+    character_character = file_entry(file_jsons, "character_character_data")
+    character_ref = file_entry(file_jsons, "character")
+    sound_voicer = file_entry(file_jsons, "sound_voicer")
+    character_model = file_entry(file_jsons, "character_model")
+
     global base_json
     global sub_json
     new_dict = tree()
     sub_dict = tree()
     new_dict.update(json.loads(base_json))
     sub_dict.update(json.loads(sub_json))
-    mot_set = get_entries(motion_set, True)
-    file_info = get_file_information(file_information, True)
-    ROW_COUNT = len(list(command_set.keys()))
-    new_dict["ROW_COUNT"] = ROW_COUNT
-    sub_dict["ROW_COUNT"] = ROW_COUNT
+    chara_model = get_entries(character_model, True)
+    voicer = get_entries(sound_voicer, True)
+    chara = get_entries(character_ref, True)
+    sub_ROW_COUNT = len(list(character_character.keys()))
+    main_entry_list = []
+    txt_dict = {}
+    new_chara_dict = {}
+    last_entry = list(chara.keys())[-1]
+    last_chara_entry = int(chara[last_entry]) + 1
 
-    command_set = sort_dict_by_file_info(command_set, file_info)
+    for entry in character_character:
+        character_character[entry]["voicer"] = voicer[character_character[entry]["voicer"]]
+        character_character[entry]["adv_model_id"] = chara_model[character_character[entry]["adv_model_id"]]
+        character_character[entry]["auth_model_id"] = chara_model[character_character[entry]["auth_model_id"]]
+        if entry not in chara:
+            new_chara_dict[entry] = last_chara_entry
+            chara[entry] = last_chara_entry
+            last_chara_entry += 1
+        new_entry = {"*character": chara[entry], **character_character[entry]}
+        txt_dict[character_character[entry]["face_target"]] = 0
+        txt_dict[character_character[entry]["test_motion"]] = 0
+        txt_dict[character_character[entry]["face_target_custom"]] = 0
+        txt_dict[character_character[entry]["face_target_ekkaiwa"]] = 0
+        main_entry_list.append(new_entry)
+    main_entry_list = remove_duplicates(main_entry_list)
+    for entry in character_character:
+        entry_ref = find_matching_index(main_entry_list, character_character[entry])
+        character_character[entry] = entry_ref
 
-    for midx, entry in enumerate(list(command_set.keys())):
-        command_set[entry]["motion_set"] = mot_set[command_set[entry]["motion_set"]]
-        for sub_entry in command_set[entry]:
-            new_dict[str(midx)][""][sub_entry] = command_set[entry][sub_entry]
-        sub_dict[str(midx)][entry]["0"] = file_info[entry]
-        sub_dict[str(midx)][entry]["2"] = midx
+    new_dict["ROW_COUNT"] = len(main_entry_list)
+    new_dict["TEXT_COUNT"] = len(txt_dict)
+    sub_dict["ROW_COUNT"] = sub_ROW_COUNT
+
+    character_character = sort_dict_by_puid(character_character, chara)
+
+    for midx, entry in enumerate(main_entry_list):
+        new_dict[str(midx)][""] = entry
+
+    for midx, entry in enumerate(list(character_character.keys())):
+        sub_dict[str(midx)][entry]["0"] = chara[entry]
+        sub_dict[str(midx)][entry]["2"] = character_character[entry]
     new_dict["subTable"] = sub_dict
-    return new_dict
+    file_jsons["Final"]["character_character_data"] = new_dict
+    for entry in new_chara_dict:
+        entry_num = str(new_chara_dict[entry])
+        file_jsons["Sub"]["character"][entry_num] = {entry: {"reARMP_isValid": "1"}}
+        file_jsons["Sub"]["character"]["ROW_COUNT"] += 1
+        file_jsons["Final"]["character"] = file_jsons["Sub"]["character"]
+    return
 
 
 base_json = '''

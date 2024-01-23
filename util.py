@@ -72,3 +72,9 @@ def check_workspace(req_files, file_jsons):
         print(warning_string)
         return True
     return False
+
+
+def yes_or_no():
+    print("Type 'y' and press enter if yes, otherwise just press enter.")
+    minput = input("")
+    return minput.lower() == "y"

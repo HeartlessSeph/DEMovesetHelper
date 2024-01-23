@@ -9,6 +9,27 @@ def generate_short_random_id(length=4):
     return ''.join(random.choice(characters) for _ in range(length))
 
 
+def add_name_group_entry(c_name, name_group, name_string):
+    m_group = str(name_group)
+    group_name = list(c_name[m_group].keys())[0]
+    new_index = c_name[m_group][group_name]["table"]["ROW_COUNT"]
+    c_name[m_group][group_name]["table"][str(new_index)] = \
+        {"": {"1": name_string, "2": 0, "reARMP_isValid": "1", "reARMP_rowIndex": new_index}}
+    c_name[m_group][group_name]["table"]["ROW_COUNT"] += 1
+    return new_index
+
+
+def update_name_group_text_counts(mdict):
+    for entry in [e for e in mdict if e.isdigit()]:
+        unique_str_dict = {}
+        group_name = list(mdict[entry].keys())[0]
+        if not "table" in mdict[entry][group_name]: continue
+        for nidx, nid in enumerate([e for e in mdict[entry][group_name]["table"] if e.isdigit()]):
+            if "1" in mdict[entry][group_name]["table"][nid][""]:
+                unique_str_dict[mdict[entry][group_name]["table"][nid][""]["1"]] = 0
+        mdict[entry][group_name]["table"]["TEXT_COUNT"] = len(unique_str_dict) + int((len(unique_str_dict) > 0))
+
+
 def prep_workspace(file_jsons):
     req_files = ["character_npc_soldier_personal_data",
                  "battle_ctrltype",
@@ -38,11 +59,13 @@ def prep_workspace(file_jsons):
                 n_set_name = f"{set_name} (UID: {generate_short_random_id()})"
         new_dict[n_set_name] = soldier_personal[entry][set_name]
 
-        new_dict[n_set_name] = {"Name Preview": "", **new_dict[n_set_name]}
         new_dict[n_set_name].pop("reARMP_rowIndex")
         name_group = new_dict[n_set_name]["name_group"]
         name_id = new_dict[n_set_name]["name"]
-        new_dict[n_set_name]["Name Preview"] = c_name[name_group][name_id]
+        if isinstance(c_name.get(name_group, {}).get(name_id, {}), dict):
+            new_dict[n_set_name]["name"] = None
+        else:
+            new_dict[n_set_name]["name"] = c_name[name_group][name_id]
         new_dict[n_set_name]["ctrltype"] = ctrl[new_dict[n_set_name]["ctrltype"]]
         new_dict[n_set_name]["chara"] = chara[new_dict[n_set_name]["chara"]]
         new_dict[n_set_name]["equip_l"] = asset_id[new_dict[n_set_name]["equip_l"]]
@@ -57,13 +80,16 @@ def prep_build(file_jsons):
                  "battle_ctrltype",
                  "character",
                  "asset_id",
-                 "battle_ai_setting"]
+                 "battle_ai_setting",
+                 "character_npc_soldier_name_group"]
     if check_workspace(req_files, file_jsons): return
     soldier_personal = file_entry(file_jsons, "character_npc_soldier_personal_data")
     battle_ctrl_type = file_entry(file_jsons, "battle_ctrltype")
     character = file_entry(file_jsons, "character")
     asset_id = file_entry(file_jsons, "asset_id")
     battle_ai_setting = file_entry(file_jsons, "battle_ai_setting")
+    c_name = file_jsons["puid"]["character_npc_soldier_name_group"]
+    c_name_orig = file_entry(file_jsons, "character_npc_soldier_name_group")
 
     global base_json
     new_dict = tree()
@@ -74,17 +100,30 @@ def prep_build(file_jsons):
     ai = get_entries(battle_ai_setting, True)
     ROW_COUNT = len(list(soldier_personal.keys()))
     new_dict["ROW_COUNT"] = ROW_COUNT
+    name_update_bool = False
     for midx, entry in enumerate(list(soldier_personal.keys())):
         idx = str(midx)
         new_entry = entry.split("(")[0].strip()
         new_dict[idx][new_entry] = soldier_personal[entry]
-        if "Name Preview" in new_dict[idx][new_entry]: new_dict[idx][new_entry].pop("Name Preview")
+        m_name = new_dict[idx][new_entry]["name"]
+        m_n_group = new_dict[idx][new_entry]["name_group"]
+        if not m_name:
+            n_index = 0
+        elif m_name not in c_name[m_n_group]:
+            n_index = add_name_group_entry(c_name_orig, m_n_group, m_name)
+            name_update_bool = True
+        else:
+            n_index = c_name[m_n_group][m_name]
+        new_dict[idx][new_entry]["name"] = n_index
         new_dict[idx][new_entry]["ctrltype"] = ctrl[new_dict[idx][new_entry]["ctrltype"]]
         new_dict[idx][new_entry]["chara"] = chara[new_dict[idx][new_entry]["chara"]]
         new_dict[idx][new_entry]["equip_l"] = asset_id[new_dict[idx][new_entry]["equip_l"]]
         new_dict[idx][new_entry]["equip_r"] = asset_id[new_dict[idx][new_entry]["equip_r"]]
         new_dict[idx][new_entry]["battle_ai_setting"] = ai[new_dict[idx][new_entry]["battle_ai_setting"]]
         new_dict[idx][new_entry]["reARMP_rowIndex"] = midx
+    if name_update_bool:
+        update_name_group_text_counts(c_name_orig)
+        file_jsons["Final"]["character_npc_soldier_name_group"] = c_name_orig
     file_jsons["Final"]["character_npc_soldier_personal_data"] = new_dict
     return
 
